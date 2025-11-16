@@ -1,11 +1,13 @@
+import os
+
 import gradio as gr
-from torchvision import transforms, models
-from PIL import Image
+import pandas as pd
+import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import timm
-import os
+from torchvision import models, transforms
+
 
 # Define SmallCNN architecture
 class SmallCNN(nn.Module):
@@ -63,9 +65,9 @@ preprocess = transforms.Compose([
     transforms.ToTensor()
 ])
 
-# Prediction function
-def predict(image, model_choice):
-    model = loaded_models[model_choice]
+# Prediction function for single model
+def predict_single_model(model, model_name, image):
+    """Run prediction for a single model"""
     img_tensor = preprocess(image).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
         outputs = model(img_tensor)
@@ -73,30 +75,149 @@ def predict(image, model_choice):
     labels = ["Normal", "Pneumonia"]
     pred_idx = probs.argmax()
     return {
-        "Predicted Class": labels[pred_idx],
-        "Confidence": f"{probs[pred_idx]*100:.2f}%",
-        "Model Used": model_choice
+        "model": model_name,
+        "predicted_class": labels[pred_idx],
+        "normal_confidence": float(probs[0]) * 100,
+        "pneumonia_confidence": float(probs[1]) * 100,
+        "confidence": float(probs[pred_idx]) * 100
     }
+
+# Prediction function for all models
+def predict_all_models(image):
+    """Run prediction on all loaded models and return comparison"""
+    if not loaded_models:
+        return "No models loaded!", None
+
+    results = []
+    for model_name, model in loaded_models.items():
+        try:
+            result = predict_single_model(model, model_name, image)
+            results.append(result)
+        except Exception as e:
+            results.append({
+                "model": model_name,
+                "predicted_class": "Error",
+                "normal_confidence": 0.0,
+                "pneumonia_confidence": 0.0,
+                "confidence": 0.0,
+                "error": str(e)
+            })
+
+    # Create comparison DataFrame
+    df = pd.DataFrame(results)
+    df = df[["model", "predicted_class", "normal_confidence", "pneumonia_confidence", "confidence"]]
+    df.columns = ["Model", "Prediction", "Normal %", "Pneumonia %", "Confidence %"]
+
+    # Format percentages
+    for col in ["Normal %", "Pneumonia %", "Confidence %"]:
+        df[col] = df[col].apply(lambda x: f"{x:.2f}%")
+
+    # Create HTML visualization
+    html_output = create_comparison_html(results)
+
+    return df, html_output
+
+def create_comparison_html(results):
+    """Create an HTML visualization of model comparisons"""
+    html = "<div style='font-family: Arial, sans-serif; padding: 20px;'>"
+    html += "<h2 style='text-align: center; color: #2c3e50;'>Model Comparison Results</h2>"
+
+    html += "<div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 20px;'>"
+
+    for result in results:
+        html += f"""
+        <div style='border: 3px solid #3498db; border-radius: 10px; padding: 15px; background-color: #ebf5fb;'>
+            <h3 style='margin-top: 0; color: #2c3e50;'>{result['model']}</h3>
+            <p style='font-size: 18px; font-weight: bold; color: #e74c3c; margin: 10px 0;'>
+                {result['predicted_class']}
+            </p>
+            <div style='margin: 10px 0;'>
+                <div style='margin: 5px 0;'>
+                    <span style='color: #3498db;'>Normal:</span>
+                    <div style='background-color: #ecf0f1; border-radius: 5px; height: 20px; margin-top: 5px;'>
+                        <div style='background-color: #3498db; height: 100%; width: {result['normal_confidence']}%; border-radius: 5px; text-align: center; color: white; font-size: 12px; line-height: 20px;'>
+                            {result['normal_confidence']:.1f}%
+                        </div>
+                    </div>
+                </div>
+                <div style='margin: 5px 0;'>
+                    <span style='color: #e74c3c;'>Pneumonia:</span>
+                    <div style='background-color: #ecf0f1; border-radius: 5px; height: 20px; margin-top: 5px;'>
+                        <div style='background-color: #e74c3c; height: 100%; width: {result['pneumonia_confidence']}%; border-radius: 5px; text-align: center; color: white; font-size: 12px; line-height: 20px;'>
+                            {result['pneumonia_confidence']:.1f}%
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p style='margin-top: 10px; font-size: 14px; color: #7f8c8d;'>
+                Confidence: <strong>{result['confidence']:.2f}%</strong>
+            </p>
+        </div>
+        """
+
+    html += "</div>"
+
+    # Add agreement section
+    predictions = [r['predicted_class'] for r in results]
+    unique_predictions = set(predictions)
+    if len(unique_predictions) == 1:
+        html += "<div style='margin-top: 20px; padding: 15px; background-color: #d5f4e6; border-radius: 10px; text-align: center;'>"
+        html += f"<h3 style='color: #27ae60;'>✓ All models agree: <strong>{predictions[0]}</strong></h3>"
+        html += "</div>"
+    else:
+        html += "<div style='margin-top: 20px; padding: 15px; background-color: #fff3cd; border-radius: 10px; text-align: center;'>"
+        html += f"<h3 style='color: #856404;'>⚠ Models disagree: {', '.join(unique_predictions)}</h3>"
+        html += "</div>"
+
+    html += "</div>"
+    return html
 
 def create_demo():
     """Create Gradio interface with loaded models"""
-    return gr.Interface(
-        fn=predict,
-        inputs=[
-            gr.Image(type="pil", label="Upload Chest X-ray"),
-            gr.Radio(list(loaded_models.keys()), label="Choose Model",
-                    value=list(loaded_models.keys())[0] if loaded_models else "ViT_Tiny")
-        ],
-        outputs=[
-            gr.JSON(label="Prediction Output")
-        ],
-        title="Pneumonia Detection Demo",
-        description=(
-            "Upload a chest X-ray image and select a trained model to predict whether "
-            "the patient shows signs of pneumonia or is normal."
-        ),
-        examples=None
-    )
+    with gr.Blocks(title="Pneumonia Detection Demo", theme=gr.themes.Soft()) as demo:
+        gr.Markdown(
+            """
+            # 🫁 Pneumonia Detection from Chest X-rays
+
+            Upload a chest X-ray image to compare predictions from all trained models.
+            All models will analyze the image simultaneously and display their results side-by-side.
+            """
+        )
+
+        with gr.Row():
+            with gr.Column(scale=1):
+                image_input = gr.Image(
+                    type="pil",
+                    label="Upload Chest X-ray Image",
+                    height=400
+                )
+                predict_btn = gr.Button("🔍 Analyze with All Models", variant="primary", size="lg")
+
+            with gr.Column(scale=2):
+                html_output = gr.HTML(label="Model Comparison")
+                table_output = gr.Dataframe(
+                    label="Detailed Results Table",
+                    wrap=True,
+                    headers=["Model", "Prediction", "Normal %", "Pneumonia %", "Confidence %"]
+                )
+
+        gr.Markdown(
+            """
+            ### 📊 Model Information
+            - **ViT_Tiny**: Vision Transformer (Best overall performance - 83% accuracy, 0.96 AUC)
+            - **ResNet50_Aug**: ResNet-50 with data augmentation (High AUC but class imbalance)
+            - **ResNet50_NoAug**: ResNet-50 without augmentation (High AUC but class imbalance)
+            - **SmallCNN**: Baseline CNN from scratch (Balanced predictions)
+            """
+        )
+
+        predict_btn.click(
+            fn=predict_all_models,
+            inputs=[image_input],
+            outputs=[table_output, html_output]
+        )
+
+    return demo
 
 if __name__ == "__main__":
     print("Loading models...")
