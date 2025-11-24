@@ -119,97 +119,389 @@ def predict_all_models(image):
 
 def create_comparison_html(results):
     """Create an HTML visualization of model comparisons"""
-    html = "<div style='font-family: Arial, sans-serif; padding: 20px;'>"
-    html += "<h2 style='text-align: center; color: #2c3e50;'>Model Comparison Results</h2>"
+    html = """
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        .results-container {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            padding: 30px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .results-title {
+            text-align: center;
+            color: #000000;
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .results-subtitle {
+            text-align: center;
+            color: #212529;
+            font-size: 16px;
+            margin-bottom: 30px;
+            font-weight: 500;
+        }
+        .models-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-top: 30px;
+        }
+        .model-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border-top: 4px solid;
+        }
+        .model-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 32px rgba(0,0,0,0.18);
+        }
+        .model-card.vit { border-top-color: #6366f1; }
+        .model-card.resnet { border-top-color: #10b981; }
+        .model-card.cnn { border-top-color: #f59e0b; }
+        .model-name {
+            font-size: 20px;
+            font-weight: 600;
+            color: #000000 !important;
+            margin: 0 0 16px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .prediction-badge {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            margin: 12px 0;
+            text-align: center;
+            width: 100%;
+        }
+        .prediction-normal {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .prediction-pneumonia {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        .confidence-bar-container {
+            margin: 16px 0;
+        }
+        .confidence-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            font-weight: 500;
+            color: #212529 !important;
+            margin-bottom: 6px;
+        }
+        .confidence-label span {
+            color: #212529 !important;
+        }
+        .confidence-bar-bg {
+            background-color: #e9ecef;
+            border-radius: 10px;
+            height: 28px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .confidence-bar-fill {
+            height: 100%;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 13px;
+            font-weight: 600;
+            transition: width 0.5s ease;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        }
+        .bar-normal {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        }
+        .bar-pneumonia {
+            background: linear-gradient(90deg, #f093fb 0%, #f5576c 100%);
+        }
+        .overall-confidence {
+            margin-top: 20px;
+            padding: 16px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 12px;
+            text-align: center;
+        }
+        .overall-confidence-label {
+            font-size: 14px;
+            color: #212529 !important;
+            font-weight: 600;
+        }
+        .overall-confidence-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #000000 !important;
+            margin-top: 8px;
+        }
+        .agreement-banner {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .agreement-consensus {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+            color: #155724;
+        }
+        .agreement-disagreement {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            color: #856404;
+        }
+    </style>
+    <div class="results-container">
+        <h2 class="results-title">📊 Model Comparison Results</h2>
+        <p class="results-subtitle">Analysis from all trained models</p>
 
-    html += "<div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 20px;'>"
+        <div class="models-grid">
+    """
+
+    # Model type mapping for styling
+    model_type_map = {
+        "ViT_Tiny": "vit",
+        "ResNet50_Aug": "resnet",
+        "ResNet50_NoAug": "resnet",
+        "SmallCNN": "cnn"
+    }
 
     for result in results:
+        model_type = model_type_map.get(result['model'], '')
+        pred_class = result['predicted_class']
+        pred_class_lower = pred_class.lower()
+
         html += f"""
-        <div style='border: 3px solid #3498db; border-radius: 10px; padding: 15px; background-color: #ebf5fb;'>
-            <h3 style='margin-top: 0; color: #2c3e50;'>{result['model']}</h3>
-            <p style='font-size: 18px; font-weight: bold; color: #e74c3c; margin: 10px 0;'>
-                {result['predicted_class']}
-            </p>
-            <div style='margin: 10px 0;'>
-                <div style='margin: 5px 0;'>
-                    <span style='color: #3498db;'>Normal:</span>
-                    <div style='background-color: #ecf0f1; border-radius: 5px; height: 20px; margin-top: 5px;'>
-                        <div style='background-color: #3498db; height: 100%; width: {result['normal_confidence']}%; border-radius: 5px; text-align: center; color: white; font-size: 12px; line-height: 20px;'>
+            <div class="model-card {model_type}">
+                <h3 class="model-name" style="color: #000000 !important;">🤖 {result['model']}</h3>
+                <div class="prediction-badge prediction-{pred_class_lower}">
+                    {pred_class}
+                </div>
+                <div class="confidence-bar-container">
+                    <div class="confidence-label">
+                        <span style="color: #212529 !important;">Normal</span>
+                        <span style="color: #212529 !important;">{result['normal_confidence']:.1f}%</span>
+                    </div>
+                    <div class="confidence-bar-bg">
+                        <div class="confidence-bar-fill bar-normal" style="width: {result['normal_confidence']}%;">
                             {result['normal_confidence']:.1f}%
                         </div>
                     </div>
                 </div>
-                <div style='margin: 5px 0;'>
-                    <span style='color: #e74c3c;'>Pneumonia:</span>
-                    <div style='background-color: #ecf0f1; border-radius: 5px; height: 20px; margin-top: 5px;'>
-                        <div style='background-color: #e74c3c; height: 100%; width: {result['pneumonia_confidence']}%; border-radius: 5px; text-align: center; color: white; font-size: 12px; line-height: 20px;'>
+                <div class="confidence-bar-container">
+                    <div class="confidence-label">
+                        <span style="color: #212529 !important;">Pneumonia</span>
+                        <span style="color: #212529 !important;">{result['pneumonia_confidence']:.1f}%</span>
+                    </div>
+                    <div class="confidence-bar-bg">
+                        <div class="confidence-bar-fill bar-pneumonia" style="width: {result['pneumonia_confidence']}%;">
                             {result['pneumonia_confidence']:.1f}%
                         </div>
                     </div>
                 </div>
+                <div class="overall-confidence">
+                    <div class="overall-confidence-label" style="color: #212529 !important;">Overall Confidence</div>
+                    <div class="overall-confidence-value" style="color: #000000 !important;">{result['confidence']:.2f}%</div>
+                </div>
             </div>
-            <p style='margin-top: 10px; font-size: 14px; color: #7f8c8d;'>
-                Confidence: <strong>{result['confidence']:.2f}%</strong>
-            </p>
-        </div>
         """
 
-    html += "</div>"
+    html += """
+        </div>
+    """
 
     # Add agreement section
     predictions = [r['predicted_class'] for r in results]
     unique_predictions = set(predictions)
     if len(unique_predictions) == 1:
-        html += "<div style='margin-top: 20px; padding: 15px; background-color: #d5f4e6; border-radius: 10px; text-align: center;'>"
-        html += f"<h3 style='color: #27ae60;'>✓ All models agree: <strong>{predictions[0]}</strong></h3>"
-        html += "</div>"
+        html += f"""
+        <div class="agreement-banner agreement-consensus">
+            ✅ <strong>Consensus Reached!</strong> All models agree: <strong>{predictions[0]}</strong>
+        </div>
+        """
     else:
-        html += "<div style='margin-top: 20px; padding: 15px; background-color: #fff3cd; border-radius: 10px; text-align: center;'>"
-        html += f"<h3 style='color: #856404;'>⚠ Models disagree: {', '.join(unique_predictions)}</h3>"
-        html += "</div>"
+        html += f"""
+        <div class="agreement-banner agreement-disagreement">
+            ⚠️ <strong>Models Disagree:</strong> {', '.join(unique_predictions)}
+        </div>
+        """
 
-    html += "</div>"
+    html += """
+    </div>
+    """
     return html
 
 def create_demo():
     """Create Gradio interface with loaded models"""
-    with gr.Blocks(title="Pneumonia Detection Demo", theme=gr.themes.Soft()) as demo:
-        gr.Markdown(
-            """
-            # 🫁 Pneumonia Detection from Chest X-rays
+    custom_css = """
+    .gradio-container {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .main-header {
+        text-align: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 40px 20px;
+        border-radius: 16px;
+        margin-bottom: 30px;
+        color: white;
+        box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+    }
+    .main-header h1 {
+        margin: 0;
+        font-size: 42px;
+        font-weight: 700;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .main-header p {
+        margin: 15px 0 0 0;
+        font-size: 18px;
+        opacity: 0.95;
+    }
+    .upload-section {
+        background: white;
+        padding: 25px;
+        border-radius: 16px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        margin-bottom: 20px;
+    }
+    .analyze-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        border: none !important;
+        padding: 16px 32px !important;
+        font-size: 18px !important;
+        font-weight: 600 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4) !important;
+        transition: all 0.3s ease !important;
+        width: 100% !important;
+        margin-top: 20px !important;
+    }
+    .analyze-btn:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5) !important;
+    }
+    .info-section {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 30px;
+        border-radius: 16px;
+        margin-top: 30px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    }
+    .info-section h3 {
+        color: #000000;
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin-top: 15px;
+    }
+    .info-card {
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        border-left: 4px solid;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .info-card.vit { border-left-color: #6366f1; }
+    .info-card.resnet { border-left-color: #10b981; }
+    .info-card.cnn { border-left-color: #f59e0b; }
+    .info-card strong {
+        color: #000000;
+        font-size: 16px;
+        display: block;
+        margin-bottom: 8px;
+    }
+    .info-card p {
+        color: #212529;
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.6;
+    }
+    """
 
-            Upload a chest X-ray image to compare predictions from all trained models.
-            All models will analyze the image simultaneously and display their results side-by-side.
-            """
-        )
+    with gr.Blocks(title="Pneumonia Detection Demo", theme=gr.themes.Soft(), css=custom_css) as demo:
+        gr.HTML("""
+            <div class="main-header">
+                <h1>🫁 Pneumonia Detection from Chest X-rays</h1>
+                <p>Upload a chest X-ray image to compare predictions from all trained models</p>
+                <p style="font-size: 14px; opacity: 0.9;">All models will analyze the image simultaneously and display their results side-by-side</p>
+            </div>
+        """)
 
         with gr.Row():
             with gr.Column(scale=1):
-                image_input = gr.Image(
-                    type="pil",
-                    label="Upload Chest X-ray Image",
-                    height=400
-                )
-                predict_btn = gr.Button("🔍 Analyze with All Models", variant="primary", size="lg")
+                with gr.Group():
+                    gr.HTML('<div class="upload-section">')
+                    image_input = gr.Image(
+                        type="pil",
+                        label="📤 Upload Chest X-ray Image",
+                        height=450,
+                        show_label=True
+                    )
+                    gr.HTML('</div>')
+                    predict_btn = gr.Button(
+                        "🔍 Analyze with All Models",
+                        variant="primary",
+                        size="lg",
+                        elem_classes=["analyze-btn"]
+                    )
 
             with gr.Column(scale=2):
-                html_output = gr.HTML(label="Model Comparison")
-                table_output = gr.Dataframe(
-                    label="Detailed Results Table",
-                    wrap=True,
-                    headers=["Model", "Prediction", "Normal %", "Pneumonia %", "Confidence %"]
-                )
+                html_output = gr.HTML(label="📊 Model Comparison Results")
+                with gr.Accordion("📋 Detailed Results Table", open=False):
+                    table_output = gr.Dataframe(
+                        label="",
+                        wrap=True,
+                        headers=["Model", "Prediction", "Normal %", "Pneumonia %", "Confidence %"],
+                        interactive=False
+                    )
 
-        gr.Markdown(
-            """
-            ### 📊 Model Information
-            - **ViT_Tiny**: Vision Transformer (Best overall performance - 83% accuracy, 0.96 AUC)
-            - **ResNet50_Aug**: ResNet-50 with data augmentation (High AUC but class imbalance)
-            - **ResNet50_NoAug**: ResNet-50 without augmentation (High AUC but class imbalance)
-            - **SmallCNN**: Baseline CNN from scratch (Balanced predictions)
-            """
-        )
+        gr.HTML("""
+            <div class="info-section">
+                <h3>📊 Model Information</h3>
+                <div class="info-grid">
+                    <div class="info-card vit">
+                        <strong>🤖 ViT_Tiny</strong>
+                        <p>Vision Transformer - Best overall performance with 83% accuracy and 0.96 AUC score</p>
+                    </div>
+                    <div class="info-card resnet">
+                        <strong>🔬 ResNet50_Aug</strong>
+                        <p>ResNet-50 with data augmentation - High AUC but shows class imbalance</p>
+                    </div>
+                    <div class="info-card resnet">
+                        <strong>🔬 ResNet50_NoAug</strong>
+                        <p>ResNet-50 without augmentation - High AUC but shows class imbalance</p>
+                    </div>
+                    <div class="info-card cnn">
+                        <strong>🧠 SmallCNN</strong>
+                        <p>Baseline CNN from scratch - Provides balanced predictions across classes</p>
+                    </div>
+                </div>
+            </div>
+        """)
 
         predict_btn.click(
             fn=predict_all_models,
